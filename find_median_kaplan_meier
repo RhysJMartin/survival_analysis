@@ -1,0 +1,37 @@
+CREATE TABLE test2
+(
+  "time" integer NOT NULL,
+  "observed" boolean,
+  "group" character varying(50)
+)
+
+COPY persons(time,observed,group) 
+FROM '/Users/rhys/Documents/leukaemia.csv' DELIMITER ',' CSV HEADER;
+
+CREATE OR REPLACE FUNCTION mul2(FLOAT,FLOAT)
+RETURNS FLOAT AS '
+DECLARE
+a ALIAS FOR $1;
+b ALIAS FOR $2;
+BEGIN
+RETURN a*b;
+END;
+' LANGUAGE plpgsql;
+
+CREATE AGGREGATE mul (
+    sfunc = mul2,
+    basetype = FLOAT,
+    stype = FLOAT,
+    initcond = '1'
+);
+
+SELECT "group", min(time) AS median
+FROM (SELECT "group", "observed", "time", mul(1.0 - cast(d_i AS float) / cast(n_i AS float)) OVER (PARTITION BY "group" ORDER BY "time") AS this_and_that
+	FROM (SELECT "group", "observed", "time",
+		cast("observed" AS integer) AS d_i,
+		count(*) OVER (PARTITION BY "group") + 1 - rank() OVER (PARTITION BY "group" ORDER BY "time") AS n_i
+		FROM   test2
+     ) t
+) u
+WHERE this_and_that < 0.5
+GROUP BY "group";
